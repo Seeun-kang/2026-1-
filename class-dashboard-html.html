@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>학급 수업 관리 대시보드</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet" />
+  <style>
+    body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
+    .line-through { text-decoration: line-through; }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    const CLASS_COLORS = [
+      { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300", dot: "bg-blue-500" },
+      { bg: "bg-emerald-100", text: "text-emerald-800", border: "border-emerald-300", dot: "bg-emerald-500" },
+      { bg: "bg-violet-100", text: "text-violet-800", border: "border-violet-300", dot: "bg-violet-500" },
+      { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300", dot: "bg-orange-500" },
+      { bg: "bg-pink-100", text: "text-pink-800", border: "border-pink-300", dot: "bg-pink-500" },
+      { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-300", dot: "bg-teal-500" },
+    ];
+
+    const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+    const DAY_NAMES_FULL = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"];
+    const TOTAL_SESSIONS = 34;
+
+    const initClasses = () => [
+      { id: 1, name: "B반", days: [1, 3, 4] },
+      { id: 2, name: "D반", days: [2, 3, 5] },
+      { id: 3, name: "7반", days: [1, 2, 3] },
+      { id: 4, name: "8반", days: [2, 4, 5] },
+      { id: 5, name: "9반", days: [2, 3, 4] },
+      { id: 6, name: "10반", days: [1, 4, 5] },
+    ];
+
+    function App() {
+      const today = new Date();
+      const [year, setYear] = useState(today.getFullYear());
+      const [month, setMonth] = useState(today.getMonth());
+      const [classes, setClasses] = useState(initClasses);
+      const [holidays, setHolidays] = useState({});
+      const [visibleClasses, setVisibleClasses] = useState([1,2,3,4,5,6]);
+      const [activeTab, setActiveTab] = useState("calendar");
+      const [sessionNames, setSessionNames] = useState({});
+      const [editingSession, setEditingSession] = useState(null);
+      const [sessionInput, setSessionInput] = useState("");
+
+      const calDays = useMemo(() => {
+        const first = new Date(year, month, 1);
+        const last = new Date(year, month + 1, 0);
+        const days = [];
+        for (let i = 0; i < first.getDay(); i++) days.push(null);
+        for (let d = 1; d <= last.getDate(); d++) days.push(d);
+        return days;
+      }, [year, month]);
+
+      const getPastSessions = (cls) => {
+        let count = 0;
+        for (let m = 0; m < month; m++) {
+          const last = new Date(year, m + 1, 0);
+          for (let d = 1; d <= last.getDate(); d++) {
+            const date = new Date(year, m, d);
+            const key = `${year}-${m}-${d}`;
+            if (cls.days.includes(date.getDay()) && !holidays[key]) count++;
+          }
+        }
+        return count;
+      };
+
+      const getMonthSessions = (cls) => {
+        const sessions = [];
+        let sessionNum = getPastSessions(cls) + 1;
+        calDays.forEach((d) => {
+          if (!d) return;
+          const date = new Date(year, month, d);
+          const key = `${year}-${month}-${d}`;
+          if (cls.days.includes(date.getDay())) {
+            if (holidays[key]) {
+              sessions.push({ day: d, session: sessionNum, cancelled: true });
+            } else {
+              sessions.push({ day: d, session: sessionNum, cancelled: false });
+              sessionNum++;
+            }
+          }
+        });
+        return sessions;
+      };
+
+      const allSessionsMap = useMemo(() => {
+        const map = {};
+        classes.forEach(cls => { map[cls.id] = getMonthSessions(cls); });
+        return map;
+      }, [classes, holidays, year, month]);
+
+      const toggleHoliday = (day) => {
+        const key = `${year}-${month}-${day}`;
+        setHolidays(h => ({ ...h, [key]: !h[key] }));
+      };
+
+      const toggleDay = (clsId, dow) => {
+        setClasses(cs => cs.map(c => {
+          if (c.id !== clsId) return c;
+          const days = c.days.includes(dow) ? c.days.filter(d => d !== dow) : [...c.days, dow].sort();
+          return { ...c, days };
+        }));
+      };
+
+      const toggleVisible = (id) => {
+        setVisibleClasses(v => v.includes(id) ? v.filter(x => x !== id) : [...v, id]);
+      };
+
+      const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y-1); } else setMonth(m => m-1); };
+      const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y+1); } else setMonth(m => m+1); };
+
+      const getSessionName = (clsId, sessionNum) => sessionNames[`${clsId}-${sessionNum}`] || `${sessionNum}차시`;
+
+      const startEditSession = (clsId, sessionNum) => {
+        setEditingSession({ clsId, sessionNum });
+        setSessionInput(sessionNames[`${clsId}-${sessionNum}`] || "");
+      };
+
+      const saveSessionName = () => {
+        if (!editingSession) return;
+        const { clsId, sessionNum } = editingSession;
+        setSessionNames(s => ({ ...s, [`${clsId}-${sessionNum}`]: sessionInput.trim() || `${sessionNum}차시` }));
+        setEditingSession(null);
+      };
+
+      const isToday = (d) => {
+        const t = new Date();
+        return d === t.getDate() && month === t.getMonth() && year === t.getFullYear();
+      };
+
+      const isHoliday = (day) => holidays[`${year}-${month}-${day}`];
+
+      const getDayClasses = (day) => {
+        if (!day) return [];
+        return classes.filter(cls => {
+          const dow = new Date(year, month, day).getDay();
+          return cls.days.includes(dow) && visibleClasses.includes(cls.id);
+        });
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          {/* Header */}
+          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-blue-600 text-xl">📚</span>
+              <h1 className="text-lg font-bold text-gray-800">학급 수업 관리 대시보드</h1>
+            </div>
+            <div className="flex gap-1">
+              {["calendar", "stats", "settings"].map(tab => (
+                <button key={tab} onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === tab ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
+                  {tab === "calendar" ? "📅 달력" : tab === "stats" ? "📊 통계" : "⚙️ 설정"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-w-5xl mx-auto px-3 py-4">
+            {/* Filter pills */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button onClick={() => setVisibleClasses(classes.map(c=>c.id))}
+                className="px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700 hover:bg-gray-300">전체</button>
+              {classes.map((cls, i) => {
+                const col = CLASS_COLORS[i];
+                const active = visibleClasses.includes(cls.id);
+                return (
+                  <button key={cls.id} onClick={() => toggleVisible(cls.id)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${active ? `${col.bg} ${col.text} ${col.border}` : "bg-white text-gray-400 border-gray-200"}`}>
+                    {cls.name}
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeTab === "calendar" && (
+              <>
+                <div className="flex items-center justify-between mb-4 bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+                  <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600">◀</button>
+                  <h2 className="font-bold text-gray-800">{year}년 {month + 1}월</h2>
+                  <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600">▶</button>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="grid grid-cols-7 border-b border-gray-100">
+                    {DAY_NAMES.map((d, i) => (
+                      <div key={d} className={`py-2 text-center text-xs font-semibold ${i===0?"text-red-400":i===6?"text-blue-400":"text-gray-500"}`}>{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7">
+                    {calDays.map((day, idx) => {
+                      const dow = idx % 7;
+                      const dayClasses = day ? getDayClasses(day) : [];
+                      const holiday = day && isHoliday(day);
+                      const todayMark = day && isToday(day);
+                      return (
+                        <div key={idx} className={`min-h-20 border-r border-b border-gray-50 p-1.5 ${!day?"bg-gray-50":""} ${holiday?"bg-red-50":""}`}>
+                          {day && (
+                            <>
+                              <div className="flex items-center justify-between mb-1">
+                                <span onClick={() => toggleHoliday(day)}
+                                  className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full cursor-pointer select-none
+                                    ${todayMark?"bg-blue-600 text-white":holiday?"text-red-500":dow===0?"text-red-400":dow===6?"text-blue-400":"text-gray-700"}
+                                    hover:ring-2 hover:ring-yellow-300`}>
+                                  {day}
+                                </span>
+                                {holiday && <span className="text-xs text-red-400 font-medium">휴</span>}
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                {dayClasses.map(cls => {
+                                  const col = CLASS_COLORS[cls.id - 1];
+                                  const sessions = allSessionsMap[cls.id] || [];
+                                  const sess = sessions.find(s => s.day === day);
+                                  if (!sess) return null;
+                                  return (
+                                    <div key={cls.id}
+                                      onClick={() => !sess.cancelled && startEditSession(cls.id, sess.session)}
+                                      className={`text-xs px-1 py-0.5 rounded font-medium truncate cursor-pointer ${sess.cancelled?"opacity-40 line-through":""} ${col.bg} ${col.text}`}
+                                      title={sess.cancelled ? "휴강" : getSessionName(cls.id, sess.session)}>
+                                      <span className="font-bold">{cls.name}</span> {!sess.cancelled && getSessionName(cls.id, sess.session)}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-2 text-center">날짜 클릭 → 휴업일 지정 | 수업 클릭 → 단원명 입력</p>
+              </>
+            )}
+
+            {activeTab === "stats" && (
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                  <h3 className="font-bold text-gray-700 mb-3 text-sm">{year}년 {month+1}월 수업 횟수 요약</h3>
+                  <div className="space-y-3">
+                    {classes.filter(c => visibleClasses.includes(c.id)).map((cls) => {
+                      const col = CLASS_COLORS[cls.id - 1];
+                      const sessions = allSessionsMap[cls.id] || [];
+                      const actual = sessions.filter(s => !s.cancelled).length;
+                      const cancelled = sessions.filter(s => s.cancelled).length;
+                      const past = getPastSessions(cls);
+                      const cumulative = past + actual;
+                      const progress = Math.min((cumulative / TOTAL_SESSIONS) * 100, 100);
+                      return (
+                        <div key={cls.id} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2.5 h-2.5 rounded-full ${col.dot}`}></span>
+                              <span className="text-sm font-semibold text-gray-700">{cls.name}</span>
+                              <span className="text-xs text-gray-400">({cls.days.map(d=>DAY_NAMES[d]).join("/")})</span>
+                            </div>
+                            <div>
+                              <span className="text-sm font-bold text-gray-800">{actual}회</span>
+                              {cancelled > 0 && <span className="text-xs text-red-400 ml-1">(휴강 {cancelled})</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-gray-100 rounded-full h-2">
+                              <div className={`h-2 rounded-full ${col.dot}`} style={{width:`${progress}%`}}></div>
+                            </div>
+                            <span className="text-xs text-gray-500 w-16 text-right">누적 {cumulative}/{TOTAL_SESSIONS}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                  <h3 className="font-bold text-gray-700 mb-3 text-sm">반별 비교</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-gray-500 border-b border-gray-100">
+                          <th className="text-left py-2">반</th>
+                          <th className="text-center py-2">수업 요일</th>
+                          <th className="text-center py-2">이번달</th>
+                          <th className="text-center py-2">누적</th>
+                          <th className="text-center py-2">진도율</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {classes.filter(c => visibleClasses.includes(c.id)).map((cls) => {
+                          const col = CLASS_COLORS[cls.id - 1];
+                          const sessions = allSessionsMap[cls.id] || [];
+                          const actual = sessions.filter(s => !s.cancelled).length;
+                          const past = getPastSessions(cls);
+                          const cumulative = past + actual;
+                          const progress = Math.min(Math.round((cumulative / TOTAL_SESSIONS) * 100), 100);
+                          return (
+                            <tr key={cls.id} className="border-b border-gray-50">
+                              <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs font-semibold ${col.bg} ${col.text}`}>{cls.name}</span></td>
+                              <td className="text-center text-xs text-gray-600">{cls.days.map(d=>DAY_NAMES[d]).join(", ")}</td>
+                              <td className="text-center font-semibold text-gray-800">{actual}회</td>
+                              <td className="text-center text-gray-700">{cumulative}차시</td>
+                              <td className="text-center"><span className={`text-xs font-bold ${progress>=80?"text-emerald-600":progress>=50?"text-yellow-600":"text-red-500"}`}>{progress}%</span></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "settings" && (
+              <div className="space-y-3">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                  <h3 className="font-bold text-gray-700 mb-3 text-sm">학급별 수업 요일 설정</h3>
+                  <div className="space-y-4">
+                    {classes.map((cls) => {
+                      const col = CLASS_COLORS[cls.id - 1];
+                      return (
+                        <div key={cls.id} className="flex items-center gap-3 flex-wrap">
+                          <span className={`px-2.5 py-1 rounded-lg text-sm font-bold ${col.bg} ${col.text} w-14 text-center`}>{cls.name}</span>
+                          <div className="flex gap-1.5">
+                            {[1,2,3,4,5].map(dow => (
+                              <button key={dow} onClick={() => toggleDay(cls.id, dow)}
+                                className={`w-9 h-9 rounded-lg text-sm font-semibold border-2 transition-all
+                                  ${cls.days.includes(dow) ? `${col.bg} ${col.text} ${col.border}` : "bg-gray-50 text-gray-400 border-gray-200"}`}>
+                                {DAY_NAMES[dow]}
+                              </button>
+                            ))}
+                          </div>
+                          <span className="text-xs text-gray-400">{cls.days.map(d=>DAY_NAMES_FULL[d]).join(", ")}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                  <h3 className="font-bold text-gray-700 mb-2 text-sm">이번달 휴업일</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(holidays).filter(([k,v])=>v&&k.startsWith(`${year}-${month}-`)).map(([k])=>{
+                      const day = parseInt(k.split("-")[2]);
+                      return (
+                        <span key={k} className="flex items-center gap-1 bg-red-50 text-red-600 text-xs px-2 py-1 rounded-lg border border-red-200">
+                          {month+1}월 {day}일
+                          <button onClick={() => toggleHoliday(day)} className="hover:text-red-800 ml-1">✕</button>
+                        </span>
+                      );
+                    })}
+                    {!Object.values(holidays).some(Boolean) && <span className="text-xs text-gray-400">지정된 휴업일 없음 (달력에서 날짜 클릭으로 지정)</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Session name modal */}
+          {editingSession && (
+            <div className="fixed inset-0 flex items-center justify-center z-50 px-4" style={{background:"rgba(0,0,0,0.3)"}}>
+              <div className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-xs">
+                <h3 className="font-bold text-gray-800 mb-1 text-sm">
+                  {classes.find(c=>c.id===editingSession.clsId)?.name} — {editingSession.sessionNum}차시
+                </h3>
+                <p className="text-xs text-gray-400 mb-3">단원명 입력 (비우면 '차시'로 표시)</p>
+                <input autoFocus value={sessionInput} onChange={e=>setSessionInput(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&saveSessionName()}
+                  placeholder="예: 광합성 원리, 세포 호흡..."
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 mb-3" />
+                <div className="flex gap-2">
+                  <button onClick={saveSessionName} className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-blue-700">저장</button>
+                  <button onClick={()=>setEditingSession(null)} className="flex-1 bg-gray-100 text-gray-600 rounded-lg py-2 text-sm font-semibold hover:bg-gray-200">취소</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
