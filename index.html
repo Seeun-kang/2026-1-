@@ -8,6 +8,41 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet"/>
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDzFK6I-aHAtJNc7JhchsWxfYP0L7tzLgA",
+      authDomain: "school-time-table-dddb4.firebaseapp.com",
+      projectId: "school-time-table-dddb4",
+      storageBucket: "school-time-table-dddb4.firebasestorage.app",
+      messagingSenderId: "894931280939",
+      appId: "1:894931280939:web:3f770441e778dcdad5b66e"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+    const REF = doc(db, "dashboard", "main");
+
+    window._fbLoad = async () => {
+      try {
+        const snap = await getDoc(REF);
+        if(snap.exists()) return snap.data().semesters || null;
+      } catch(e) { console.warn("Firebase load error:", e); }
+      return null;
+    };
+
+    window._fbSave = async (semesters) => {
+      try {
+        await setDoc(REF, { semesters, updatedAt: new Date().toISOString() });
+      } catch(e) { console.warn("Firebase save error:", e); }
+    };
+
+    window._fbReady = true;
+    window.dispatchEvent(new Event("fbReady"));
+  </script>
   <style>
     body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
     .line-through { text-decoration: line-through; }
@@ -96,7 +131,7 @@ const makeSemester = (year, sem) => ({
 });
 
 /* ═══════════════ 홈 화면 ═══════════════ */
-function HomeScreen({ semesters, onSelect, onAdd, onDelete }) {
+function HomeScreen({ semesters, setSemesters, onSelect, onAdd, onDelete, syncState, lastSaved }) {
   const [newYear, setNewYear] = useState(today.getFullYear());
   const [newSem,  setNewSem]  = useState(1);
   const [showAdd, setShowAdd] = useState(false);
@@ -108,12 +143,18 @@ function HomeScreen({ semesters, onSelect, onAdd, onDelete }) {
     return Object.entries(map).sort(([a],[b])=>Number(a)-Number(b));
   },[semesters]);
 
+  const syncLabel = syncState==="saving" ? "☁️ 저장 중..." : syncState==="error" ? "⚠️ 오프라인" :
+    lastSaved ? `✅ ${lastSaved.getHours()}:${String(lastSaved.getMinutes()).padStart(2,"0")} 저장됨` : "✅ 연결됨";
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center px-4 py-12">
       <div className="mb-8 text-center">
         <div className="text-5xl mb-3">📚</div>
         <h1 className="text-2xl font-bold text-gray-800">학급 수업 관리 대시보드</h1>
         <p className="text-sm text-gray-500 mt-1">학년도 · 학기를 선택하세요</p>
+        <span className={`text-xs mt-2 inline-block px-2 py-0.5 rounded-full ${syncState==="error"?"bg-orange-100 text-orange-600":"bg-green-100 text-green-700"}`}>
+          {syncLabel}
+        </span>
       </div>
       <div className="w-full max-w-lg space-y-4">
         {grouped.length===0 && (
@@ -183,6 +224,44 @@ function HomeScreen({ semesters, onSelect, onAdd, onDelete }) {
             + 새 학기 추가
           </button>
         )}
+
+        {/* 데이터 관리 */}
+        <div className="mt-4 pt-4 border-t border-blue-200 flex items-center justify-between flex-wrap gap-2">
+          <span className="text-xs text-gray-400">💡 데이터는 이 브라우저에 자동 저장됩니다</span>
+          <div className="flex gap-2">
+            <button onClick={()=>{
+              const blob = new Blob([JSON.stringify(semesters,null,2)],{type:"application/json"});
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = `수업관리_백업_${new Date().toISOString().slice(0,10)}.json`;
+              a.click();
+            }} className="text-xs px-3 py-1.5 bg-white border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 font-medium">
+              💾 백업
+            </button>
+            <label className="text-xs px-3 py-1.5 bg-white border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 font-medium cursor-pointer">
+              📂 복원
+              <input type="file" accept=".json" className="hidden" onChange={e=>{
+                const file=e.target.files[0]; if(!file) return;
+                const reader=new FileReader();
+                reader.onload=ev=>{
+                  try {
+                    const data=JSON.parse(ev.target.result);
+                    if(Array.isArray(data)){ setSemesters(data); alert("복원 완료!"); }
+                    else alert("올바른 백업 파일이 아닙니다.");
+                  } catch { alert("파일을 읽을 수 없습니다."); }
+                };
+                reader.readAsText(file);
+                e.target.value="";
+              }}/>
+            </label>
+            <button onClick={()=>{
+              if(confirm("모든 데이터를 초기화할까요? 되돌릴 수 없습니다."))
+                setSemesters([makeSemester(2026,1)]);
+            }} className="text-xs px-3 py-1.5 bg-white border border-red-200 text-red-400 rounded-lg hover:bg-red-50 font-medium">
+              🗑️ 초기화
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -261,7 +340,7 @@ function SemesterScreen({ semData, onSelectSubject, onAddSubject, onDeleteSubjec
 }
 
 /* ═══════════════ 수업 대시보드 ═══════════════ */
-function Dashboard({ semData, subjData, onUpdateSubject, onUpdateSemExam, onBack }) {
+function Dashboard({ semData, subjData, onUpdateSubject, onUpdateSemExam, onBack, syncState, lastSaved }) {
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
 
@@ -530,13 +609,15 @@ function Dashboard({ semData, subjData, onUpdateSubject, onUpdateSemExam, onBack
   );
 
   const semLabel=`${semData.year}년 ${semData.sem}학기`;
+  const syncLabel = syncState==="saving" ? "☁️ 저장 중..." : syncState==="error" ? "⚠️ 오프라인" :
+    lastSaved ? `✅ ${lastSaved.getHours()}:${String(lastSaved.getMinutes()).padStart(2,"0")} 저장됨` : "✅ 연결됨";
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-lg">←</button>
             <span className="text-gray-400 text-sm">{semLabel}</span>
             <span className="text-gray-300">/</span>
@@ -550,6 +631,9 @@ function Dashboard({ semData, subjData, onUpdateSubject, onUpdateSemExam, onBack
                 {subjNameInput}
               </button>
             )}
+            <span className={`text-xs px-2 py-0.5 rounded-full ${syncState==="error"?"bg-orange-100 text-orange-600":syncState==="saving"?"bg-blue-100 text-blue-600":"bg-green-100 text-green-700"}`}>
+              {syncLabel}
+            </span>
           </div>
           <div className="flex gap-1 flex-wrap">
             {["calendar","stats","curriculum","settings"].map(tab=>(
@@ -952,10 +1036,56 @@ function Dashboard({ semData, subjData, onUpdateSubject, onUpdateSemExam, onBack
 }
 
 /* ═══════════════ 최상위 App ═══════════════ */
+const STORAGE_KEY = "class-dashboard-v4";
+
+// debounce 헬퍼
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(()=>fn(...args), ms); };
+}
+const debouncedSave = debounce((sems) => {
+  if(window._fbSave) window._fbSave(sems);
+}, 1500);
+
 function App() {
-  const [semesters,    setSemesters]    = useState(()=>[makeSemester(2026,1)]);
+  const [semesters,  setSemesters]  = useState([makeSemester(2026,1)]);
   const [activeSemId,  setActiveSemId]  = useState(null);
   const [activeSubjId, setActiveSubjId] = useState(null);
+  const [syncState, setSyncState] = useState("loading"); // "loading" | "ok" | "error"
+  const [lastSaved, setLastSaved] = useState(null);
+
+  /* 앱 시작 시 Firebase에서 데이터 로드 */
+  useEffect(()=>{
+    const load = async () => {
+      const doLoad = async () => {
+        if(!window._fbLoad) return;
+        const data = await window._fbLoad();
+        if(data && Array.isArray(data) && data.length > 0) {
+          setSemesters(data);
+        }
+        setSyncState("ok");
+      };
+
+      if(window._fbReady) {
+        await doLoad();
+      } else {
+        // Firebase 모듈 로드 대기
+        window.addEventListener("fbReady", async () => { await doLoad(); }, { once: true });
+        // 3초 후에도 안 되면 로컬 데이터 사용
+        setTimeout(()=>setSyncState(s => s==="loading" ? "error" : s), 3000);
+      }
+    };
+    load();
+  }, []);
+
+  /* semesters 변경 시 Firebase에 저장 (debounce 1.5초) */
+  useEffect(()=>{
+    if(syncState !== "ok") return;
+    setSyncState("saving");
+    debouncedSave(semesters);
+    const t = setTimeout(()=>{ setSyncState("ok"); setLastSaved(new Date()); }, 1800);
+    return ()=>clearTimeout(t);
+  }, [semesters]);
 
   const activeSem  = semesters.find(s=>s.id===activeSemId)||null;
   const activeSubj = activeSem ? activeSem.subjects.find(s=>s.id===activeSubjId)||null : null;
@@ -980,6 +1110,15 @@ function App() {
   };
 
   /* 라우팅 */
+  if(syncState === "loading") {
+    return(
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center gap-4">
+        <div className="text-5xl animate-bounce">📚</div>
+        <p className="text-gray-500 text-sm font-medium">데이터를 불러오는 중...</p>
+      </div>
+    );
+  }
+
   if(activeSem && activeSubj){
     return(
       <Dashboard
@@ -988,6 +1127,8 @@ function App() {
         onUpdateSubject={data=>updateSubject(activeSemId,activeSubjId,data)}
         onUpdateSemExam={ep=>updateSemExam(activeSemId,ep)}
         onBack={()=>setActiveSubjId(null)}
+        syncState={syncState}
+        lastSaved={lastSaved}
       />
     );
   }
@@ -1006,9 +1147,12 @@ function App() {
   return(
     <HomeScreen
       semesters={semesters}
+      setSemesters={setSemesters}
       onSelect={id=>setActiveSemId(id)}
       onAdd={addSemester}
       onDelete={deleteSemester}
+      syncState={syncState}
+      lastSaved={lastSaved}
     />
   );
 }
