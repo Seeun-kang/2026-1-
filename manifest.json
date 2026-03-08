@@ -1,0 +1,25 @@
+{
+  "name": "학급 수업 관리 대시보드",
+  "short_name": "수업관리",
+  "description": "학기별 수업 및 반 관리 대시보드",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#eff6ff",
+  "theme_color": "#3b82f6",
+  "lang": "ko",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
